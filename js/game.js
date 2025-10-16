@@ -11,7 +11,7 @@
   const CARD_RADIUS = 12;
   const PLAYER_Y = canvas.height - CARD_HEIGHT - 32;
   const COMPUTER_Y = 32;
-  const MESSAGE_LIMIT = 5;
+  const MESSAGE_DISPLAY_DURATION = 1500;
 
   const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   const SUITS = [
@@ -29,7 +29,8 @@
     computerBooks: [],
     turn: 'player',
     over: false,
-    messages: [],
+    messageQueue: [],
+    activeMessage: null,
     selectedRank: null,
     hoverRank: null
   };
@@ -88,11 +89,9 @@
     }
   }
 
-  function pushMessage(text) {
-    game.messages.push({ text, timestamp: Date.now() });
-    if (game.messages.length > MESSAGE_LIMIT) {
-      game.messages.shift();
-    }
+  function pushMessage(text, options = {}) {
+    const { persistent = false } = options;
+    game.messageQueue.push({ text, persistent, expiresAt: null });
   }
 
   function startGame() {
@@ -103,7 +102,8 @@
     game.playerBooks = [];
     game.computerBooks = [];
     game.over = false;
-    game.messages = [];
+    game.messageQueue = [];
+    game.activeMessage = null;
     game.turn = 'player';
     game.selectedRank = null;
     pushMessage('Welcome to Go Fish! Click on a card to ask for that rank.');
@@ -182,12 +182,14 @@
       game.over = true;
       const playerScore = game.playerBooks.length;
       const computerScore = game.computerBooks.length;
+      game.messageQueue = [];
+      game.activeMessage = null;
       if (playerScore > computerScore) {
-        pushMessage('You win!');
+        pushMessage('You win!', { persistent: true });
       } else if (playerScore < computerScore) {
-        pushMessage('The computer wins. Better luck next time!');
+        pushMessage('The computer wins. Better luck next time!', { persistent: true });
       } else {
-        pushMessage("It's a tie!");
+        pushMessage("It's a tie!", { persistent: true });
       }
     }
   }
@@ -461,14 +463,15 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
-    const lines = game.messages.slice(-MESSAGE_LIMIT);
-    for (let i = 0; i < lines.length; i += 1) {
-      ctx.fillText(lines[i].text, canvas.width / 2, baseY + i * 24);
+    const message = game.activeMessage;
+    if (message) {
+      ctx.fillText(message.text, canvas.width / 2, baseY);
     }
     if (game.over) {
       ctx.font = '22px "Fira Sans", "Segoe UI", sans-serif';
       ctx.fillStyle = '#ffd166';
-      ctx.fillText('Click anywhere to play again.', canvas.width / 2, baseY + lines.length * 24 + 16);
+      const offset = game.activeMessage ? 40 : 16;
+      ctx.fillText('Click anywhere to play again.', canvas.width / 2, baseY + offset);
     }
     ctx.restore();
   }
@@ -543,7 +546,23 @@
     drawMessages();
   }
 
+  function updateMessageState() {
+    const now = Date.now();
+    const active = game.activeMessage;
+    if (active) {
+      if (!active.persistent && now >= active.expiresAt) {
+        game.activeMessage = null;
+      }
+    }
+    if (!game.activeMessage && game.messageQueue.length > 0) {
+      const next = game.messageQueue.shift();
+      next.expiresAt = next.persistent ? Infinity : now + MESSAGE_DISPLAY_DURATION;
+      game.activeMessage = next;
+    }
+  }
+
   function update() {
+    updateMessageState();
     draw();
     requestAnimationFrame(update);
   }

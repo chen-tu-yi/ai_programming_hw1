@@ -338,6 +338,30 @@
         if (opponentHand.length === 0) {
           ensureHandHasCards(opponent);
         }
+        if (requesterHand.length === 0) {
+          ensureHandHasCards(requester);
+        }
+        if (game.over) {
+          return;
+        }
+        if (requesterHand.length === 0) {
+          if (game.deck.length === 0) {
+            checkGameOver();
+            if (game.over) {
+              return;
+            }
+          }
+          if (requester === 'player') {
+            pushMessage('You have no cards to ask with, so the turn returns to the computer.');
+            game.turn = 'computer';
+            queueComputerTurn(true);
+          } else {
+            pushMessage('The computer has no cards to ask with, passing back to you.');
+            game.turn = 'player';
+            queuePlayerTurnPrompt();
+          }
+          return;
+        }
         if (!madeBook) {
           pushMessage(`${requester === 'player' ? 'You' : 'The computer'} get another turn.`);
         }

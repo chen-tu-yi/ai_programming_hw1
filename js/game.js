@@ -31,6 +31,8 @@
     over: false,
     messageQueue: [],
     activeMessage: null,
+    afterMessageCallbacks: [],
+    awaitingPlayerAction: false,
     selectedRank: null,
     hoverRank: null
   };
@@ -94,6 +96,70 @@
     game.messageQueue.push({ text, persistent, expiresAt: null });
   }
 
+  function processAfterMessageCallbacks() {
+    if (game.over) {
+      game.afterMessageCallbacks.length = 0;
+      return;
+    }
+    if (game.activeMessage || game.messageQueue.length > 0) {
+      return;
+    }
+    if (game.afterMessageCallbacks.length === 0) {
+      return;
+    }
+    const callbacks = game.afterMessageCallbacks.splice(0);
+    for (const callback of callbacks) {
+      callback();
+    }
+    processAfterMessageCallbacks();
+  }
+
+  function onMessagesCleared(callback) {
+    game.afterMessageCallbacks.push(callback);
+    processAfterMessageCallbacks();
+  }
+
+  function queuePlayerReady() {
+    onMessagesCleared(() => {
+      if (!game.over && game.turn === 'player') {
+        game.awaitingPlayerAction = true;
+      }
+    });
+  }
+
+  function queuePlayerTurnPrompt(message = 'Your turn. Click a rank to ask for it.') {
+    onMessagesCleared(() => {
+      if (game.over || game.turn !== 'player') {
+        return;
+      }
+      pushMessage(message);
+      queuePlayerReady();
+    });
+  }
+
+  function queueComputerTurn(withPrompt = true) {
+    if (withPrompt) {
+      onMessagesCleared(() => {
+        if (game.over || game.turn !== 'computer') {
+          return;
+        }
+        pushMessage("Computer's turn.");
+        queueComputerTurn(false);
+      });
+      return;
+    }
+    onMessagesCleared(() => {
+      if (game.over || game.turn !== 'computer') {
+        return;
+      }
+      setTimeout(() => {
+        if (!game.over && game.turn === 'computer') {
+          computerTurn();
+        }
+      }, 0);
+    });
+  }
+
   function startGame() {
     game.deck = createDeck();
     shuffle(game.deck);
@@ -104,9 +170,12 @@
     game.over = false;
     game.messageQueue = [];
     game.activeMessage = null;
+    game.afterMessageCallbacks = [];
+    game.awaitingPlayerAction = false;
     game.turn = 'player';
     game.selectedRank = null;
     pushMessage('Welcome to Go Fish! Click on a card to ask for that rank.');
+    queuePlayerTurnPrompt();
     ensureHandHasCards('player');
   }
 
@@ -184,6 +253,8 @@
       const computerScore = game.computerBooks.length;
       game.messageQueue = [];
       game.activeMessage = null;
+      game.afterMessageCallbacks = [];
+      game.awaitingPlayerAction = false;
       if (playerScore > computerScore) {
         pushMessage('You win!', { persistent: true });
       } else if (playerScore < computerScore) {
@@ -198,9 +269,10 @@
     if (game.over) {
       return;
     }
-      game.selectedRank = null;
-      game.hoverRank = null;
+    game.selectedRank = null;
+    game.hoverRank = null;
     if (game.turn === 'player') {
+      game.awaitingPlayerAction = false;
       game.turn = 'computer';
       ensureHandHasCards('computer');
       if (game.over) {
@@ -209,15 +281,14 @@
       if (game.computerHand.length === 0) {
         if (game.deck.length === 0) {
           checkGameOver();
+          return;
         }
-        if (!game.over) {
-          pushMessage('The computer has no cards to ask with, passing back to you.');
-          switchTurn();
-        }
+        pushMessage('The computer has no cards to ask with, passing back to you.');
+        game.turn = 'player';
+        queuePlayerTurnPrompt();
         return;
       }
-      pushMessage('Computer\'s turn.');
-      setTimeout(computerTurn, 900);
+      queueComputerTurn(true);
     } else {
       game.turn = 'player';
       ensureHandHasCards('player');
@@ -227,14 +298,14 @@
       if (game.playerHand.length === 0) {
         if (game.deck.length === 0) {
           checkGameOver();
+          return;
         }
-        if (!game.over) {
-          pushMessage('You have no cards to ask with, so the turn returns to the computer.');
-          switchTurn();
-        }
+        pushMessage('You have no cards to ask with, so the turn returns to the computer.');
+        game.turn = 'computer';
+        queueComputerTurn(true);
         return;
       }
-      pushMessage('Your turn. Click a rank to ask for it.');
+      queuePlayerTurnPrompt();
     }
   }
 
@@ -253,6 +324,10 @@
       return;
     }
 
+    if (requester === 'player') {
+      game.awaitingPlayerAction = false;
+    }
+
     pushMessage(`${requester === 'player' ? 'You' : 'The computer'} asked for ${rank}s.`);
     const received = transferCards(opponentHand, requesterHand, rank);
 
@@ -267,7 +342,9 @@
           pushMessage(`${requester === 'player' ? 'You' : 'The computer'} get another turn.`);
         }
         if (requester === 'computer') {
-          setTimeout(computerTurn, 900);
+          queueComputerTurn(false);
+        } else {
+          queuePlayerReady();
         }
       }
       return;
@@ -282,12 +359,20 @@
       if (drawn.rank === rank && !game.over) {
         pushMessage(`${requester === 'player' ? 'You' : 'The computer'} drew the rank asked for and go again!`);
         if (requester === 'computer') {
-          setTimeout(computerTurn, 900);
+          queueComputerTurn(false);
+        } else {
+          queuePlayerReady();
         }
         return;
       }
       if (!madeBook) {
         switchTurn();
+      } else if (!game.over) {
+        if (requester === 'computer') {
+          queueComputerTurn(false);
+        } else {
+          queuePlayerReady();
+        }
       }
     } else {
       pushMessage('The pond is empty.');
@@ -328,6 +413,9 @@
     if (game.turn !== 'player') {
       return;
     }
+    if (!game.awaitingPlayerAction) {
+      return;
+    }
 
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -348,7 +436,7 @@
   }
 
   function handleCanvasMove(event) {
-    if (game.turn !== 'player' || game.over) {
+    if (game.turn !== 'player' || game.over || !game.awaitingPlayerAction) {
       game.hoverRank = null;
       return;
     }
@@ -559,6 +647,7 @@
       next.expiresAt = next.persistent ? Infinity : now + MESSAGE_DISPLAY_DURATION;
       game.activeMessage = next;
     }
+    processAfterMessageCallbacks();
   }
 
   function update() {

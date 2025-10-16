@@ -4,8 +4,7 @@ This repository contains a single-page implementation of the classic card game *
 
 ## Getting Started
 
-1. Open `index.html` directly in your browser, or run a lightweight dev server. For example, from this project folder you can ru
-n:
+1. Open `index.html` directly in your browser, or run a lightweight dev server. For example, from this project folder you can run:
    ```bash
    python -m http.server 8000
    ```

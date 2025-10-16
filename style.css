@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Fira Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --bg-start: #1f3157;
   --bg-end: #0e1a2f;
   --panel: rgba(17, 26, 44, 0.82);
